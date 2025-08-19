@@ -1,11 +1,12 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch: {}  # run it manually
+  workflow_dispatch: {}  # lets you click 'Run workflow'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,11 +17,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Install Android SDK + accept licenses
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms/tools
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses
+
+      # Unzip the project into a folder named DinnerDecider
+      # If your ZIP name is different, change it here.
       - name: Unzip project
         run: |
-          unzip DinnerDecider_Android_Project.zip -d DinnerDecider
+          zipfile="$(ls -1 *.zip | head -n 1)"
+          echo "Using ZIP: $zipfile"
+          unzip "$zipfile" -d DinnerDecider
 
-      # Optional: enable Places API key. Add a repository secret named PLACES_API_KEY to use this.
+      # Optional: enable Places API — add repo secret PLACES_API_KEY to use this
       - name: Write local.properties (optional)
         if: env.PLACES_API_KEY != ''
         run: |
@@ -28,16 +42,26 @@ jobs:
         env:
           PLACES_API_KEY: ${{ secrets.PLACES_API_KEY }}
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+      # Install Gradle 8.7 (no wrapper in the ZIP)
+      - name: Install Gradle via SDKMAN
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install gradle 8.7
+          gradle --version
 
+      # Build the debug APK
       - name: Build debug APK
         working-directory: DinnerDecider
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: gradle assembleDebug
 
+      # Upload the APK as a downloadable artifact
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: DinnerDecider-debug-apk
           path: DinnerDecider/app/build/outputs/apk/debug/app-debug.apk
+
 
